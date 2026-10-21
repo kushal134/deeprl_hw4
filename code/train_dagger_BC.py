@@ -43,10 +43,10 @@ class TrainDaggerBC:
             self.actions = []
             self.timesteps = []
             for trajectory in range(states.shape[0]):
-                trajectory_mask = states[trajectory].sum(axis=1) != 0
+                trajectory_mask = np.any(states[trajectory] != 0, axis=-1) # HW ERRATA 5
                 self.states.append(states[trajectory][trajectory_mask])
                 self.actions.append(actions[trajectory][trajectory_mask])
-                self.timesteps.append(np.arange(0, len(trajectory_mask)))
+                self.timesteps.append(np.arange(0, len(trajectory_mask))[trajectory_mask]) # HW ERRATA 1
             self.states = np.concatenate(self.states, axis=0)
             self.actions = np.concatenate(self.actions, axis=0)
             self.timesteps = np.concatenate(self.timesteps, axis=0)

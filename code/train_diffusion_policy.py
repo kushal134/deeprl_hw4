@@ -58,7 +58,7 @@ class TrainDiffusionPolicy:
         self.clip_sample_range = 1
         self.actions = np.clip(self.actions, -self.clip_sample_range, self.clip_sample_range)
 
-        self.trajectory_lengths = [sum(1 for s in self.states[i] if np.sum(s) != 0) for i in range(len(self.states))]
+        self.trajectory_lengths = np.any(self.states != 0, axis=-1).sum(axis=1) # HW ERRATA 5
         self.max_trajectory_length = max_trajectory_length
 
         model.set_device(self.device)
@@ -84,6 +84,7 @@ class TrainDiffusionPolicy:
             beta_end=0.02,
             beta_schedule="squaredcos_cap_v2",
             variance_type="fixed_small",
+            clip_sample=False, # HW ERRATA 4
             clip_sample_range=self.clip_sample_range,
         )
         self.inference_scheduler = DDPMScheduler(
@@ -92,6 +93,7 @@ class TrainDiffusionPolicy:
             beta_end=0.02,
             beta_schedule="squaredcos_cap_v2",
             variance_type="fixed_small_log", # variance is different for inference, see paper https://arxiv.org/pdf/2301.10677
+            clip_sample=False, # HW ERRATA 4
             clip_sample_range=self.clip_sample_range,
         )
         self.inference_scheduler.alphas_cumprod = self.inference_scheduler.alphas_cumprod.to(self.device)
@@ -296,7 +298,7 @@ class TrainDiffusionPolicy:
         previous_states_batch, previous_actions_batch, actions_batch, episode_timesteps_batch, previous_states_padding_batch, previous_actions_padding_batch, actions_padding_batch = [], [], [], [], [], [], []
         for i in range(len(batch_indices)):
             # get the start and end index for states to condition on
-            end_index_state = np.random.randint(1, self.trajectory_lengths[batch_indices[i]])
+            end_index_state = np.random.randint(1, self.trajectory_lengths[batch_indices[i]] + 1) # HW ERRATA 3
             start_index_state = max(0, end_index_state - num_previous_states)
 
             # get the start and end index for actions to condition on (we predict the action for the final state)
@@ -304,7 +306,7 @@ class TrainDiffusionPolicy:
             end_index_previous_actions = end_index_state - 1
 
             # get the start and end index for actions to predict
-            start_index_action = end_index_state
+            start_index_action = end_index_previous_actions # HW ERRATA 2
             end_index_action = min(self.trajectory_lengths[batch_indices[i]], start_index_action + max_action_len)
 
             previous_states = self.states[batch_indices[i], start_index_state:end_index_state]
