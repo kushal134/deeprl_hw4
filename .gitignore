@@ -21,3 +21,4 @@ wandb/
 log.txt
 *.npz
 *.gif
+!code/results_*/*_BEST/*.gif
