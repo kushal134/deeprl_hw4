@@ -1,4 +1,5 @@
 import gymnasium as gym
+import os
 import numpy as np
 import torch
 from torch import nn
@@ -160,7 +161,8 @@ class TrainDaggerBC:
         batch_size=64, 
         print_every=500, 
         save_every=10000, 
-        wandb_logging=False
+        wandb_logging=False,
+        output_dir=".",
     ):
         """
         Train the model using BC or DAgger
@@ -173,6 +175,7 @@ class TrainDaggerBC:
             print_every: how often to print the loss during training.
             save_every: how often to save the model during training.
             wandb_logging: whether to log the training to wandb.
+            output_dir: the directory to save plots, metrics, and wandb runs to.
 
         NOTE: for BC, you will need to call the self.training_step function and self.generate_trajectories function.
         NOTE: for DAgger, you will need to call the self.training_step and self.update_training_data function.
@@ -188,6 +191,7 @@ class TrainDaggerBC:
                 name=f"{self.mode} training",
                 group=self.mode,
                 project='DeepRL HW4 Q2',
+                dir=output_dir,
             )
 
         def record_rewards(rewards, training_iter):
@@ -238,13 +242,26 @@ class TrainDaggerBC:
         plt.plot(x_axis, mean_rewards, label="mean rewards")
         plt.plot(x_axis, median_rewards, label="median rewards")
         plt.plot(x_axis, max_rewards, label="max rewards")
+        plt.xlabel("Training Iteration")
+        plt.ylabel("Trajectory Reward")
         plt.legend()
-        plt.savefig(f"{self.mode}_rewards.png")
+        plt.savefig(os.path.join(output_dir, f"{self.mode}_rewards.png"))
 
         plt.figure()
         plt.plot(np.arange(0, len(losses)), losses, label="training loss")
+        plt.xlabel("Training Iteration")
+        plt.ylabel("MSE Loss")
         plt.legend()
-        plt.savefig(f"{self.mode}_losses.png")
+        plt.savefig(os.path.join(output_dir, f"{self.mode}_losses.png"))
+
+        np.savez(
+            os.path.join(output_dir, f"{self.mode}_metrics.npz"),
+            losses=losses,
+            reward_iterations=x_axis,
+            mean_rewards=mean_rewards,
+            median_rewards=median_rewards,
+            max_rewards=max_rewards,
+        )
 
         return losses
 
@@ -286,10 +303,29 @@ class TrainDaggerBC:
         
         return states, actions, timesteps
 
-def run_training(dagger: bool):
+def make_trial_dir(mode):
+    """
+    Creates and returns the next unused results_{mode}/trial_{number} directory
+    """
+    trial = 1
+    while True:
+        trial_dir = os.path.join(f"results_{mode}", f"trial_{trial}")
+        try:
+            os.makedirs(trial_dir)
+            return trial_dir
+        except FileExistsError:
+            trial += 1
+
+def run_training(dagger: bool, output_dir=None):
     """
     Simple Run Training Function
     """
+
+    if output_dir is None:
+        output_dir = make_trial_dir("DAgger" if dagger else "BC")
+    else:
+        os.makedirs(output_dir, exist_ok=True)
+    print(f"saving results to {output_dir}")
 
     env = gym.make('BipedalWalker-v3', render_mode='rgb_array') # , render_mode="rgb_array"
     device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -311,7 +347,7 @@ def run_training(dagger: bool):
             _, _, _, rewards, rgbs = trainer.generate_trajectory(trainer.env, trainer.model, render=True)
             traj_reward = sum(rewards)
             print(f"got trajectory with reward {traj_reward}")
-            imageio.mimsave(f'gifs_{trainer.mode}.gif', rgbs, fps=33)
+            imageio.mimsave(os.path.join(output_dir, f'gifs_{trainer.mode}.gif'), rgbs, fps=33)
     else:
         # BEGIN STUDENT SOLUTION
 
@@ -330,6 +366,7 @@ def run_training(dagger: bool):
             num_trajectories_per_batch_collection=20,
             batch_size=128,
             wandb_logging=wandb is not None,
+            output_dir=output_dir,
         )
 
         # END STUDENT SOLUTION
@@ -338,11 +375,12 @@ def run_training(dagger: bool):
             _, _, _, rewards, rgbs = trainer.generate_trajectory(trainer.env, trainer.model, render=True)
             traj_reward = sum(rewards)
             print(f"got trajectory with reward {traj_reward}")
-            imageio.mimsave(f'gifs_{trainer.mode}.gif', rgbs, fps=33)
+            imageio.mimsave(os.path.join(output_dir, f'gifs_{trainer.mode}.gif'), rgbs, fps=33)
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('--dagger', action='store_true')
+    parser.add_argument('--output_dir', type=str, default=None, help="defaults to the next unused results_{BC,DAgger}/trial_{number}")
     args = parser.parse_args()
-    run_training(args.dagger)
+    run_training(args.dagger, args.output_dir)
