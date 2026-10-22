@@ -22,3 +22,7 @@ log.txt
 *.npz
 *.gif
 !code/results_*/*_BEST/*.gif
+
+# Checkpoints
+*.pt
+!code/data/models/super_expert_PPO_model.pt
