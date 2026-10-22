@@ -1,69 +1,0 @@
-saving results to results_BC/trial_3
-wandb: Tracking run with wandb version 0.26.1
-wandb: W&B syncing is set to `offline` in this directory. Run `wandb online` or set WANDB_MODE=online to enable cloud syncing.
-wandb: Run data is saved locally in results_BC/trial_3/wandb/offline-run-20261022_142331-h0t2uauz
-  0%|          | 0/20 [00:00<?, ?it/s]Training Iteration 0:
-	 mean reward = -99.1950293679167
-	 median reward = -100.04524684272033
-	 max reward = -78.85254524640175
-Training Iteration 0: loss = 1.2496092319488525
-Training Iteration 500: loss = 0.24443231523036957
-  5%|▌         | 1/20 [00:09<02:51,  9.04s/it]Training Iteration 1000:
-	 mean reward = -115.32568716963756
-	 median reward = -114.84301340713
-	 max reward = -113.19049329123646
-Training Iteration 1000: loss = 0.2132473886013031
-Training Iteration 1500: loss = 0.10360537469387054
- 10%|█         | 2/20 [00:14<02:05,  7.00s/it]Training Iteration 2000:
-	 mean reward = -109.23396624557367
-	 median reward = -109.27018226009359
-	 max reward = -109.02989873551826
-Training Iteration 2000: loss = 0.1102963387966156
-Training Iteration 2500: loss = 0.09883511811494827
- 15%|█▌        | 3/20 [00:20<01:48,  6.39s/it]Training Iteration 3000:
-	 mean reward = -112.8838246960764
-	 median reward = -112.91883110996584
-	 max reward = -112.209040223709
-Training Iteration 3000: loss = 0.11569274961948395
-Training Iteration 3500: loss = 0.051954515278339386
- 20%|██        | 4/20 [00:26<01:38,  6.15s/it]Training Iteration 4000:
-	 mean reward = -120.52096995813622
-	 median reward = -120.60997398976298
-	 max reward = -119.59786480988066
-Training Iteration 4000: loss = 0.049726493656635284
-Training Iteration 4500: loss = 0.06590453535318375
- 25%|██▌       | 5/20 [00:31<01:29,  5.98s/it]Training Iteration 5000:
-	 mean reward = -116.7996427852808
-	 median reward = -116.35536123440353
-	 max reward = -116.19314752929844
-Training Iteration 5000: loss = 0.0583326481282711
-Training Iteration 5500: loss = 0.04610047489404678
- 30%|███       | 6/20 [00:37<01:22,  5.89s/it]Training Iteration 6000:
-	 mean reward = -116.40143825002856
-	 median reward = -116.95706109501577
-	 max reward = -109.98621957769183
-Training Iteration 6000: loss = 0.04140203446149826
-Training Iteration 6500: loss = 0.03990587592124939
- 35%|███▌      | 7/20 [00:43<01:16,  5.86s/it]Training Iteration 7000:
-	 mean reward = -22.348732077553347
-	 median reward = -102.91595429124155
-	 max reward = 265.17463960146887
-Training Iteration 7000: loss = 0.07314279675483704
-Training Iteration 7500: loss = 0.04086821898818016
- 40%|████      | 8/20 [00:49<01:13,  6.11s/it]Training Iteration 8000:
-	 mean reward = 100.88352134990448
-	 median reward = 182.7542560687458
-	 max reward = 264.55560013071727
-Training Iteration 8000: loss = 0.03385576605796814
-Training Iteration 8500: loss = 0.025854680687189102
- 45%|████▌     | 9/20 [00:57<01:11,  6.47s/it]Training Iteration 9000:
-	 mean reward = 35.537622270388205
-	 median reward = -71.43313612904618
-	 max reward = 265.71119572975937
-Training Iteration 9000: loss = 0.04599596932530403
-Training Iteration 9500: loss = 0.06021398305892944
- 50%|█████     | 10/20 [01:04<01:06,  6.64s/it]Training Iteration 10000:
-	 mean reward = 100.17373574392936
-	 median reward = 192.3905849595048
-	 max reward = 266.8557789217489
-Training Iteration 10000: loss = 0.034904807806015015

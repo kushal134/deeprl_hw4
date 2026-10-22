@@ -17,3 +17,7 @@ wandb/
 .vscode 
 # The lengths I go through when I write code manually these days oof
 
+# Experiment outputs
+log.txt
+*.npz
+*.gif
