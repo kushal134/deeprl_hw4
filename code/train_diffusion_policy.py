@@ -536,6 +536,7 @@ def run_training(
     eval_samples=20,
     eval_actions_in_a_row=(3, 2, 1),
     max_gif_attempts=None,
+    seed=None,
 ):
     """
     Creates the environment, model, and optimizer, loads the data, and trains/evaluates the model using the TrainDiffusionPolicy class.
@@ -547,6 +548,7 @@ def run_training(
         eval_samples (int): the number of trajectories to evaluate for each num_actions_to_eval_in_a_row
         eval_actions_in_a_row (tuple): the values of num_actions_to_eval_in_a_row to evaluate
         max_gif_attempts (Optional[int]): stop looking for a successful gif after this many trajectories
+        seed (Optional[int]): seeds numpy, torch, and the environment for a reproducible trial
     """
 
     if output_dir is None:
@@ -556,6 +558,11 @@ def run_training(
     print(f"saving results to {output_dir}")
 
     env = gym.make('BipedalWalker-v3',render_mode="rgb_array") # , render_mode="rgb_array"
+    if seed is not None:
+        print(f"seed {seed}")
+        np.random.seed(seed)
+        torch.manual_seed(seed)
+        env.reset(seed=seed)
     with open(f"data/states_BC.pkl", "rb") as f:
         states = pickle.load(f)
     with open(f"data/actions_BC.pkl", "rb") as f:
@@ -623,6 +630,7 @@ if __name__ == "__main__":
     parser.add_argument('--eval_samples', type=int, default=20)
     parser.add_argument('--eval_actions_in_a_row', type=int, nargs='+', default=[3, 2, 1])
     parser.add_argument('--max_gif_attempts', type=int, default=None)
+    parser.add_argument('--seed', type=int, default=None)
     args = parser.parse_args()
     run_training(
         output_dir=args.output_dir,
@@ -631,4 +639,5 @@ if __name__ == "__main__":
         eval_samples=args.eval_samples,
         eval_actions_in_a_row=args.eval_actions_in_a_row,
         max_gif_attempts=args.max_gif_attempts,
+        seed=args.seed,
     )
