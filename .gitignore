@@ -12,3 +12,8 @@ __pycache__/
 
 # wandb offline runs
 wandb/
+
+# Coding
+.vscode 
+# The lengths I go through when I write code manually these days oof
+
