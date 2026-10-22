@@ -130,7 +130,27 @@ class TrainDaggerBC:
         NOTE: you should update self.states, self.actions, and self.timesteps in this function.
         """
         # BEGIN STUDENT SOLUTION
+        rewards, new_states, new_actions, new_timesteps = [], [], [], []
 
+        for _ in range(num_trajectories_per_batch_collection):
+            states, _, timesteps, traj_rewards, _ = self.generate_trajectory(self.env, self.model)
+
+            new_states.extend(states)
+            new_actions.extend(self.call_expert_policy(state) for state in states)
+            new_timesteps.extend(timesteps)
+
+            rewards.append(sum(traj_rewards))
+
+        new_states = np.array(new_states)
+        new_actions = np.array(new_actions)
+        new_timesteps = np.array(new_timesteps)
+
+        if self.states is None: # when you have nothing before
+            self.states, self.actions, self.timesteps = new_states, new_actions, new_timesteps
+        else:
+            self.states = np.concatenate([self.states, new_states], axis=0)
+            self.actions = np.concatenate([self.actions, new_actions], axis=0)
+            self.timesteps = np.concatenate([self.timesteps, new_timesteps], axis=0)
         # END STUDENT SOLUTION
 
         return rewards
@@ -214,6 +234,8 @@ class TrainDaggerBC:
         for batch_index in tqdm(range(num_batch_collection_steps)):
             if self.mode == "BC":
                 rewards = self.generate_trajectories(num_trajectories_per_batch_collection)
+            elif self.mode == "DAgger":
+                rewards = self.update_training_data(num_trajectories_per_batch_collection)
             else:
                 raise NotImplementedError(f"What is {self.mode}?")
 
@@ -340,7 +362,25 @@ def run_training(dagger: bool, output_dir=None):
         model_weights = torch.load(f"data/models/super_expert_PPO_model.pt", map_location=device)
         expert_model.load_state_dict(model_weights["PolicyNet"])
         # BEGIN STUDENT SOLUTION
-        trainer = TrainDaggerBC(...)
+
+        model = SimpleNet(
+            state_dim=24,
+            action_dim=4,
+            hidden_layer_dimension=128,
+            max_episode_length=1600,
+            device=device,
+        )
+        optimizer = torch.optim.AdamW(model.parameters(), lr=0.0001, weight_decay=0.0001)
+        trainer = TrainDaggerBC(env, model, optimizer, states, actions, expert_model=expert_model, device=device, mode="DAgger")
+        trainer.train(
+            num_batch_collection_steps=20,
+            num_training_steps_per_batch_collection=1000,
+            num_trajectories_per_batch_collection=20,
+            batch_size=128,
+            wandb_logging=wandb is not None,
+            output_dir=output_dir,
+        )
+
         # END STUDENT SOLUTION
         traj_reward = 0
         while traj_reward < 260:
