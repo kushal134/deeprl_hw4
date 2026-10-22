@@ -144,7 +144,10 @@ class TrainDaggerBC:
         NOTE: you will need to call self.generate_trajectory in this function.
         """
         # BEGIN STUDENT SOLUTION
-
+        rewards = [
+            sum(self.generate_trajectory(self.env, self.model)[3]) 
+            for _ in range(num_trajectories_per_batch_collection)
+        ]
         # END STUDENT SOLUTION
 
         return rewards
@@ -179,6 +182,55 @@ class TrainDaggerBC:
         self.model.train()
         mean_rewards, median_rewards, max_rewards = [], [], []
         # BEGIN STUDENT SOLUTION
+
+        if wandb_logging:
+            wandb.init(
+                name=f"{self.mode} training",
+                group=self.mode,
+                project='DeepRL HW4 Q2',
+            )
+
+        def record_rewards(rewards, training_iter):
+            mean_rewards.append(np.mean(rewards))
+            median_rewards.append(np.median(rewards))
+            max_rewards.append(np.max(rewards))
+
+            print(f"Training Iteration {training_iter}:\n\t mean reward = {mean_rewards[-1]}\n\t median reward = {median_rewards[-1]}\n\t max reward = {max_rewards[-1]}")
+
+            if wandb_logging:
+                wandb.log(
+                    {
+                        "mean_reward": mean_rewards[-1],
+                        "median_reward": median_rewards[-1],
+                        "max_reward": max_rewards[-1]
+                    },
+                    step=training_iter
+                )
+
+        for batch_index in tqdm(range(num_batch_collection_steps)):
+            if self.mode == "BC":
+                rewards = self.generate_trajectories(num_trajectories_per_batch_collection)
+            else:
+                raise NotImplementedError(f"What is {self.mode}?")
+
+            record_rewards(rewards, batch_index * num_training_steps_per_batch_collection)
+
+            for step in range(num_training_steps_per_batch_collection):
+                training_iter = batch_index * num_training_steps_per_batch_collection + step
+                losses[training_iter] = self.training_step(batch_size)
+
+                if wandb_logging:
+                    wandb.log({"loss": losses[training_iter]}, step=training_iter)
+
+                if training_iter % print_every == 0:
+                    print(f"Training Iteration {training_iter}: loss = {losses[training_iter]}")
+
+        record_rewards(self.generate_trajectories(num_trajectories_per_batch_collection), len(losses))
+
+        print(f"Final loss={losses[-1]}")
+
+        if wandb_logging:
+            wandb.finish()
 
         # END STUDENT SOLUTION
         x_axis = np.arange(0, len(mean_rewards)) * num_training_steps_per_batch_collection
@@ -262,7 +314,24 @@ def run_training(dagger: bool):
             imageio.mimsave(f'gifs_{trainer.mode}.gif', rgbs, fps=33)
     else:
         # BEGIN STUDENT SOLUTION
-        trainer = TrainDaggerBC(...)
+
+        model = SimpleNet(
+            state_dim=24,
+            action_dim=4,
+            hidden_layer_dimension=128,
+            max_episode_length=1600,
+            device=device,
+        )
+        optimizer = torch.optim.AdamW(model.parameters(), lr=0.0001, weight_decay=0.0001)
+        trainer = TrainDaggerBC(env, model, optimizer, states, actions, device=device, mode="BC")
+        trainer.train(
+            num_batch_collection_steps=20,
+            num_training_steps_per_batch_collection=1000,
+            num_trajectories_per_batch_collection=20,
+            batch_size=128,
+            wandb_logging=wandb is not None,
+        )
+
         # END STUDENT SOLUTION
         traj_reward = 1
         while traj_reward > 0:
