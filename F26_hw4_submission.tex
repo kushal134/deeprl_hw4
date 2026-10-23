@@ -255,7 +255,12 @@ $x = (0, 1, 2, 3, 4)$ : \hspace{3.5em} \begin{tcolorbox}[fit,height=1cm, width=5
 \begin{tcolorbox}[fit,height=10em, width=40em, blank, borderline={1pt}{1pt},nobeforeafter]
             \begin{center}
             \begin{solution}
-
+            \raggedright
+DAgger worked better. We did 5 independent runs over both DAgger and plain BC, and we observed that we learned how to 
+walk in all 5 DAgger runs (final mean reward 240–265; close to expert's 261–266) while only in 3 of the BC runs (final mean reward 193–213), despite similar training losses.
+BC only sees states from expert trajectories, so a small action error takes the walker to states the expert never visited,
+where its errors compound until it falls. With per-step error $\epsilon$ over horizon $T$, BC's expected error grows as $O(\epsilon T^2)$. DAgger rolls out the learner, labels the states it actually visits with the expert's actions,
+and aggregates them, so the policy learns how to recover from its own mistakes and its error grows only as $O(\epsilon T)$.
             \end{solution}
             \end{center}
             \end{tcolorbox}
@@ -375,6 +380,14 @@ max: \begin{tcolorbox}[fit,height=1cm, width=2cm, blank, borderline={1pt}{1pt},n
 \begin{tcolorbox}[fit,height=10em, width=40em, blank, borderline={1pt}{1pt},nobeforeafter]
             \begin{center}
             \begin{solution}
+            \raggedright
+BC/DAgger's SimpleNet gets an action from a single forward pass of a small MLP. 
+The diffusion policy instead has to denoise its actions: every time it chooses actions it runs 30 sequential 
+denoising steps, and each step is a full forward pass of a 6-layer transformer decoder. 
+
+These steps cannot be parallelized since each depends on the previous one (sequentially)
+On our CPU one SimpleNet call took $\approx$0.04\,ms versus $\approx$36.5\,ms for one 30-step 
+diffusion sample ($\sim$1000$\times$ slower), which is why a diffusion trajectory takes 9--31\,s.
 
             \end{solution}
             \end{center}
@@ -383,7 +396,12 @@ max: \begin{tcolorbox}[fit,height=1cm, width=2cm, blank, borderline={1pt}{1pt},n
 \begin{tcolorbox}[fit,height=10em, width=40em, blank, borderline={1pt}{1pt},nobeforeafter]
             \begin{center}
             \begin{solution}
+            \raggedright
+Runtime is dominated by diffusion samples, which cost the same regardless of $N$ ($\approx$36.5\,ms each). 
 
+Executing $N$ predicted actions per sample means an episode of $T$ steps needs only $\lceil T/N \rceil$ samples, 
+so time per environment step scales as $1/N$, which results in 12.2\,ms ($N$=3), 18.3\,ms ($N$=2) and 38.0\,ms ($N$=1), 
+The average trajectory times (9.28, 14.51, 31.22\,s) also depend on episode length (761, 791, 821 steps on average). 
             \end{solution}
             \end{center}
             \end{tcolorbox}
