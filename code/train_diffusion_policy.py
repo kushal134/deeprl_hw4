@@ -12,7 +12,10 @@ from diffusion_policy_transformer import PolicyDiffusionTransformer
 from PIL import Image
 from diffusers import DDPMScheduler, DDIMScheduler
 import time
+import json
+import argparse
 import matplotlib.pyplot as plt
+from train_dagger_BC import make_trial_dir # since I don't want to implement it again
 
 try:
     import wandb
@@ -132,6 +135,30 @@ class TrainDiffusionPolicy:
         """
         # BEGIN STUDENT SOLUTION
 
+        batch_size = previous_states.shape[0]
+
+        with torch.no_grad():
+            predicted_actions = torch.randn((batch_size, max_action_len, self.action_dimension), device=self.device)
+
+            for t in self.get_inference_timesteps():
+                noise_levels = torch.full((batch_size, 1), int(t), dtype=torch.long, device=self.device)
+                predicted_noise = self.model(
+                    previous_states,
+                    previous_actions,
+                    predicted_actions,
+                    episode_timesteps,
+                    noise_levels,
+                    previous_states_padding_mask,
+                    previous_actions_padding_mask,
+                    actions_padding_mask,
+                )
+
+                predicted_actions = self.inference_scheduler.step(
+                    predicted_noise, 
+                    t, 
+                    predicted_actions
+                ).prev_sample
+
         # END STUDENT SOLUTION
         return predicted_actions
 
@@ -161,6 +188,81 @@ class TrainDiffusionPolicy:
         rewards, rgbs = np.zeros((self.max_trajectory_length,)), []
         # BEGIN STUDENT SOLUTION
 
+        def normalize(data, mean, std):
+            return (np.array(data) - mean) / std
+
+        def unnormalize(data, mean, std):
+            return data * std + mean
+
+        def pad_and_mask(data_list, max_len, dim, mean, std):
+            num_items = len(data_list)
+            padded_array = np.zeros((max_len, dim))
+            
+            if num_items > 0:
+                padded_array[:num_items] = normalize(data_list, mean, std)
+                
+            mask = np.zeros(max_len, dtype=bool)
+            mask[num_items:] = True
+            
+            return padded_array, mask
+
+        state, _ = env.reset()
+        states_list, actions_list, timesteps_list = [state], [], [0]
+
+        if render:
+            rgbs.append(env.render())
+
+        done, truncated = False, False
+
+        while not done and not truncated:
+            states_list = states_list[-num_previous_states:]
+            actions_list = actions_list[-num_previous_actions:]
+            timesteps_list = timesteps_list[-num_previous_states:]
+
+            model_input_previous_states, previous_states_padding_mask = pad_and_mask(
+                states_list, num_previous_states, self.state_dimension, self.states_mean, self.states_std
+            )
+            model_input_previous_actions, previous_actions_padding_mask = pad_and_mask(
+                actions_list, num_previous_actions, self.action_dimension, self.actions_mean, self.actions_std
+            )
+
+            num_states = len(states_list)
+            episode_timesteps = np.arange(timesteps_list[0], timesteps_list[0] + num_previous_states)
+
+            predicted_actions_raw = self.diffusion_sample(
+                torch.from_numpy(model_input_previous_states).float().unsqueeze(0).to(self.device),
+                torch.from_numpy(model_input_previous_actions).float().unsqueeze(0).to(self.device),
+                torch.from_numpy(episode_timesteps).long().unsqueeze(0).to(self.device),
+                torch.from_numpy(previous_states_padding_mask).unsqueeze(0).to(self.device),
+                torch.from_numpy(previous_actions_padding_mask).unsqueeze(0).to(self.device),
+            )
+
+            predicted_actions_unclipped = unnormalize(
+                predicted_actions_raw[0].cpu().numpy(), 
+                self.actions_mean, 
+                self.actions_std
+            )
+            predicted_actions = np.clip(
+                predicted_actions_unclipped, 
+                -self.clip_sample_range, 
+                self.clip_sample_range
+            )
+
+            for action in predicted_actions[:num_actions_to_eval_in_a_row]:
+                state, reward, done, truncated, _ = env.step(action)
+                rewards[timesteps_list[-1]] = reward
+
+                if render:
+                    rgbs.append(env.render())
+
+                if done or truncated:
+                    break
+
+                states_list.append(state)
+                actions_list.append(action)
+                timesteps_list.append(timesteps_list[-1] + 1)
+
+
         # END STUDENT SOLUTION
         return rewards, rgbs
 
@@ -169,6 +271,8 @@ class TrainDiffusionPolicy:
         diffusion_policy_iter=None, 
         num_samples=20,
         num_actions_to_eval_in_a_row=3,
+        model_dir="data/diffusion_policy_transformer_models",
+        output_dir=None,
     ):
         """
         evaluate the model on the environment
@@ -176,24 +280,28 @@ class TrainDiffusionPolicy:
         Args:
             diffusion_policy_iter (Optional[int]): the iteration to load the diffusion policy from
             num_samples (int): the number of samples to evaluate
+            num_actions_to_eval_in_a_row (int): the number of predicted actions to execute before resampling
+            model_dir (str): the directory to load the model weights from
+            output_dir (Optional[str]): the directory to save per-trajectory rewards and times to
 
         NOTE: feel free to change this function when making graphs
         """
         # load model weights:
         if diffusion_policy_iter is None:
-            self.model.load_state_dict(torch.load(f"data/diffusion_policy_transformer_models/diffusion_policy.pt", map_location=self.device))
+            self.model.load_state_dict(torch.load(os.path.join(model_dir, "diffusion_policy.pt"), map_location=self.device))
         else:
-            self.model.load_state_dict(torch.load(f"data/diffusion_policy_transformer_models/diffusion_policy_iter_{diffusion_policy_iter}.pt", map_location=self.device))
+            self.model.load_state_dict(torch.load(os.path.join(model_dir, f"diffusion_policy_iter_{diffusion_policy_iter}.pt"), map_location=self.device))
 
  
         self.model.eval() # turn on eval mode (this turns off dropout, running_mean, etc. that are used in training)
 
         rewards = np.zeros((num_samples, self.max_trajectory_length))
-        os.makedirs("data/diffusion_policy_trajectories", exist_ok=True)
+        times = np.zeros(num_samples)
         for sample_trajectory in tqdm(range(num_samples)):
             time1 = time.time()
             reward, _ = self.sample_trajectory(self.env, num_actions_to_eval_in_a_row=num_actions_to_eval_in_a_row)
             time2 = time.time()
+            times[sample_trajectory] = time2 - time1
             print(f"trajectory {sample_trajectory} took {time2 - time1} seconds")
             rewards[sample_trajectory] = reward
             print(f"rewards from trajectory {sample_trajectory}={reward.sum()}")
@@ -201,6 +309,25 @@ class TrainDiffusionPolicy:
         print(f"median reward per trajectory={np.median(rewards.sum(axis=1))}")
         print(f"max reward per trajectory={np.max(rewards.sum(axis=1))}")
         print(f"average trajectory length={np.mean(np.array([sum(1 for r in rewards[i] if r != 0) for i in range(len(rewards))]))}")
+        print(f"average time per trajectory={times.mean()}")
+
+        trajectory_rewards = rewards.sum(axis=1)
+        stats = {
+            "num_actions_to_eval_in_a_row": num_actions_to_eval_in_a_row,
+            "num_samples": num_samples,
+            "avg_trajectory_time": float(times.mean()),
+            "mean_reward": float(trajectory_rewards.mean()),
+            "median_reward": float(np.median(trajectory_rewards)),
+            "max_reward": float(trajectory_rewards.max()),
+            "avg_trajectory_length": float(np.mean(np.count_nonzero(rewards, axis=1))),
+        }
+        if output_dir is not None:
+            np.savez(
+                os.path.join(output_dir, f"eval_{num_actions_to_eval_in_a_row}_actions.npz"),
+                rewards=rewards,
+                times=times,
+            )
+        return stats
 
     def train(
         self, 
@@ -208,7 +335,8 @@ class TrainDiffusionPolicy:
         batch_size=64, 
         print_every=5000, 
         save_every=10000, 
-        wandb_logging=False
+        wandb_logging=False,
+        output_dir="data/diffusion_policy_transformer_models",
     ):
         """
         training loop that calls training_step
@@ -219,13 +347,16 @@ class TrainDiffusionPolicy:
             print_every (int): how often to print the loss
             save_every (int): how often to save the model
             wandb_logging (bool): whether to log to wandb
+            output_dir (str): the directory to save checkpoints, the loss plot, and wandb runs to
         """
         model = self.model
+        os.makedirs(output_dir, exist_ok=True)
         if wandb_logging:
             wandb.init(
                 name="diffusion transfomer training",
                 group="diffuson transformer",
-                project='walker deepRL HW4',
+                project='DeepRL HW4 Q2',
+                dir=output_dir,
             )
 
         losses = np.zeros(num_training_steps)
@@ -234,26 +365,25 @@ class TrainDiffusionPolicy:
             loss = self.training_step(batch_size)
             losses[training_iter] = loss
             if wandb_logging:
-                wandb.log({"loss": loss})
+                wandb.log({"loss": loss}, step=training_iter)
             if training_iter % print_every == 0:
                 print(f"Training Iteration {training_iter}: loss = {loss}")
             if (training_iter + 1) % save_every == 0:
-                # save model in data/diffusion_policy_transformer_models
-                os.makedirs("data/diffusion_policy_transformer_models", exist_ok=True)
-                torch.save(model.state_dict(), f"data/diffusion_policy_transformer_models/diffusion_policy_iter_{training_iter + 1}.pt")
+                torch.save(model.state_dict(), os.path.join(output_dir, f"diffusion_policy_iter_{training_iter + 1}.pt"))
 
-        os.makedirs("data/diffusion_policy_transformer_models", exist_ok=True)
-        torch.save(model.state_dict(), f"data/diffusion_policy_transformer_models/diffusion_policy.pt")
+        torch.save(model.state_dict(), os.path.join(output_dir, "diffusion_policy.pt"))
         if wandb_logging:
             wandb.finish()
-        else:
-            x_axis = np.arange(num_training_steps)
-            plt.plot(x_axis, losses)
-            plt.xlabel("Training Iteration")
-            plt.ylabel("Loss")
-            plt.title("Training Loss Diffusion Policy")
-            plt.savefig("data/diffusion_policy_transformer_models/diffusion_policy_loss.png")
-            print(f"final loss={losses[-1]}")
+
+        x_axis = np.arange(num_training_steps)
+        plt.figure()
+        plt.plot(x_axis, losses)
+        plt.xlabel("Training Iteration")
+        plt.ylabel("Loss")
+        plt.title("Training Loss Diffusion Policy")
+        plt.savefig(os.path.join(output_dir, "diffusion_policy_loss.png"))
+        np.savez(os.path.join(output_dir, "diffusion_policy_losses.npz"), losses=losses)
+        print(f"final loss={losses[-1]}")
 
         return losses
 
@@ -270,6 +400,40 @@ class TrainDiffusionPolicy:
         NOTE: return a loss value that is a plain float (not a tensor), and is on cpu
         """
         # BEGIN STUDENT SOLUTION
+
+
+        (
+            previous_states,
+            previous_actions,
+            actions,
+            episode_timesteps,
+            previous_states_padding_mask,
+            previous_actions_padding_mask,
+            actions_padding_mask,
+        ) = self.get_training_batch(batch_size)
+
+        noise = torch.randn_like(actions)
+        noise_timesteps = torch.randint(0, self.num_train_diffusion_timesteps, (actions.shape[0],), device=self.device)
+        noisy_actions = self.training_scheduler.add_noise(actions, noise, noise_timesteps)
+
+        predicted_noise = self.model(
+            previous_states,
+            previous_actions,
+            noisy_actions,
+            episode_timesteps,
+            noise_timesteps.unsqueeze(1),
+            previous_states_padding_mask,
+            previous_actions_padding_mask,
+            actions_padding_mask,
+        )
+
+        loss = nn.functional.mse_loss(predicted_noise[~actions_padding_mask], noise[~actions_padding_mask])
+
+        self.optimizer.zero_grad()
+        loss.backward()
+        self.optimizer.step()
+
+        loss = loss.detach().cpu().item()
 
         # END STUDENT SOLUTION
 
@@ -365,26 +529,115 @@ class TrainDiffusionPolicy:
 
         return previous_states_batch, previous_actions_batch, actions_batch, episode_timesteps_batch, previous_states_padding_batch, previous_actions_padding_batch, actions_padding_batch
 
-def run_training():
+def run_training(
+    output_dir=None,
+    num_training_steps=50000,
+    skip_training=False,
+    eval_samples=20,
+    eval_actions_in_a_row=(3, 2, 1),
+    max_gif_attempts=None,
+    seed=None,
+):
     """
     Creates the environment, model, and optimizer, loads the data, and trains/evaluates the model using the TrainDiffusionPolicy class.
+
+    Args:
+        output_dir (Optional[str]): where to save results, defaults to the next unused results_diffusion/trial_{number}
+        num_training_steps (int): the number of training steps to run
+        skip_training (bool): evaluate the model already saved in output_dir instead of training a new one
+        eval_samples (int): the number of trajectories to evaluate for each num_actions_to_eval_in_a_row
+        eval_actions_in_a_row (tuple): the values of num_actions_to_eval_in_a_row to evaluate
+        max_gif_attempts (Optional[int]): stop looking for a successful gif after this many trajectories
+        seed (Optional[int]): seeds numpy, torch, and the environment for a reproducible trial
     """
 
+    if output_dir is None:
+        output_dir = make_trial_dir("diffusion")
+    else:
+        os.makedirs(output_dir, exist_ok=True)
+    print(f"saving results to {output_dir}")
+
     env = gym.make('BipedalWalker-v3',render_mode="rgb_array") # , render_mode="rgb_array"
+    if seed is not None:
+        print(f"seed {seed}")
+        np.random.seed(seed)
+        torch.manual_seed(seed)
+        env.reset(seed=seed)
     with open(f"data/states_BC.pkl", "rb") as f:
         states = pickle.load(f)
     with open(f"data/actions_BC.pkl", "rb") as f:
         actions = pickle.load(f)
     # BEGIN STUDENT SOLUTION
-    trainer = TrainDiffusionPolicy(...)
+
+    if torch.cuda.is_available():
+        train_device = eval_device = "cuda"
+    else:
+        train_device = "mps" if torch.backends.mps.is_available() else "cpu"
+        eval_device = "cpu"
+
+    def make_trainer(device):
+        model = PolicyDiffusionTransformer(
+            num_transformer_layers=6,
+            state_dim=24,
+            act_dim=4,
+            hidden_size=128,
+            max_episode_length=1600,
+            n_transformer_heads=1,
+            device=device,
+        )
+        optimizer = torch.optim.AdamW(model.parameters(), lr=0.00005, weight_decay=0.001)
+        return TrainDiffusionPolicy(env, model, optimizer, states, actions, device=device)
+
+    if not skip_training:
+        print(f"training on {train_device}")
+        make_trainer(train_device).train(
+            num_training_steps=num_training_steps,
+            batch_size=256,
+            wandb_logging=wandb is not None,
+            output_dir=output_dir,
+        )
+
+    print(f"evaluating on {eval_device}")
+    trainer = make_trainer(eval_device)
+    eval_results = []
+
+    for num_actions_to_eval_in_a_row in eval_actions_in_a_row:
+        eval_results.append(trainer.evaluation(
+            num_samples=eval_samples,
+            num_actions_to_eval_in_a_row=num_actions_to_eval_in_a_row,
+            model_dir=output_dir,
+            output_dir=output_dir,
+        ))
+        with open(os.path.join(output_dir, "eval_summary.json"), "w") as f:
+            json.dump(eval_results, f, indent=4)
+        print(json.dumps(eval_results[-1], indent=4))
+
     # END STUDENT SOLUTION
-    trainer.evaluation(num_samples=30)
     traj_reward = 0
-    while traj_reward < 240:
+    gif_attempts = 0
+    while traj_reward < 240 and (max_gif_attempts is None or gif_attempts < max_gif_attempts):
         rewards, rgbs = trainer.sample_trajectory(trainer.env, num_actions_to_eval_in_a_row=3, render=True)
         traj_reward = rewards.sum()
+        gif_attempts += 1
         print(f"got trajectory with reward {traj_reward}")
-    imageio.mimsave(f'gifs_diffusion.gif', rgbs, fps=33)
+    imageio.mimsave(os.path.join(output_dir, 'gifs_diffusion.gif'), rgbs, fps=33)
 
 if __name__ == "__main__":
-    run_training()
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--output_dir', type=str, default=None, help="defaults to the next unused results_diffusion/trial_{number}")
+    parser.add_argument('--num_training_steps', type=int, default=50000)
+    parser.add_argument('--skip_training', action='store_true', help="evaluate the model already saved in --output_dir")
+    parser.add_argument('--eval_samples', type=int, default=20)
+    parser.add_argument('--eval_actions_in_a_row', type=int, nargs='+', default=[3, 2, 1])
+    parser.add_argument('--max_gif_attempts', type=int, default=None)
+    parser.add_argument('--seed', type=int, default=None)
+    args = parser.parse_args()
+    run_training(
+        output_dir=args.output_dir,
+        num_training_steps=args.num_training_steps,
+        skip_training=args.skip_training,
+        eval_samples=args.eval_samples,
+        eval_actions_in_a_row=args.eval_actions_in_a_row,
+        max_gif_attempts=args.max_gif_attempts,
+        seed=args.seed,
+    )

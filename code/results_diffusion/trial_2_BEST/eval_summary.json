@@ -1,0 +1,29 @@
+[
+    {
+        "num_actions_to_eval_in_a_row": 3,
+        "num_samples": 20,
+        "avg_trajectory_time": 9.275057554244995,
+        "mean_reward": 183.52264077073178,
+        "median_reward": 261.1043616858294,
+        "max_reward": 266.121876170705,
+        "avg_trajectory_length": 760.6
+    },
+    {
+        "num_actions_to_eval_in_a_row": 2,
+        "num_samples": 20,
+        "avg_trajectory_time": 14.508723413944244,
+        "mean_reward": 202.584297602838,
+        "median_reward": 261.8462177997377,
+        "max_reward": 266.7667576033277,
+        "avg_trajectory_length": 790.95
+    },
+    {
+        "num_actions_to_eval_in_a_row": 1,
+        "num_samples": 20,
+        "avg_trajectory_time": 31.21994295120239,
+        "mean_reward": 231.2969323035611,
+        "median_reward": 264.30472218424234,
+        "max_reward": 268.9475823029751,
+        "avg_trajectory_length": 821.2
+    }
+]

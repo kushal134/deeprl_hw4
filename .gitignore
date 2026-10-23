@@ -6,3 +6,36 @@ __pycache__/
 # macOS
 .DS_Store
 ._*
+
+# Data
+*.pkl
+
+# wandb offline runs
+wandb/
+
+# Coding
+.vscode 
+# The lengths I go through when I write code manually these days oof
+
+# Experiment outputs
+log.txt
+*.npz
+*.gif
+!code/results_*/*_BEST/*.gif
+
+# Checkpoints
+*.pt
+!code/data/models/super_expert_PPO_model.pt
+
+# LaTeX build files
+*.aux
+*.fdb_latexmk
+*.fls
+*.out
+*.synctex.gz
+*.synctex(busy)
+*.toc
+*.bbl
+*.blg
+*.xdv
+*.log
