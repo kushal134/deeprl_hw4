@@ -26,3 +26,16 @@ log.txt
 # Checkpoints
 *.pt
 !code/data/models/super_expert_PPO_model.pt
+
+# LaTeX build files
+*.aux
+*.fdb_latexmk
+*.fls
+*.out
+*.synctex.gz
+*.synctex(busy)
+*.toc
+*.bbl
+*.blg
+*.xdv
+*.log
